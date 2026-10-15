@@ -393,11 +393,14 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
     char* responseBuffer;
     int responseBufferSize;
     int connectRetries;
+    uint64_t startTime;
+    bool completeBeforeClose = false;
 
     *error = -1;
     ret = false;
     responseBuffer = NULL;
     connectRetries = 0;
+    startTime = PltGetMillis();
 
     // Retry up to 10 seconds if we receive ECONNREFUSED errors from the host PC.
     // This can happen with GFE 3.22 when initially launching a session because it
@@ -497,8 +500,27 @@ static bool transactRtspMessageTcp(PRTSP_MESSAGE request, PRTSP_MESSAGE response
             }
       
             offset += err;
+
+            // Encrypted RTSP messages carry their exact length in the header, so the
+            // response is complete as soon as that many bytes have arrived. Stop here
+            // instead of waiting for the server to close the connection: if its FIN is
+            // lost or delayed (seen on PS Vita Wi-Fi), waiting can take several seconds
+            // per request and push the handshake past the host's launch timeout.
+            if (encryptedRtspEnabled && offset >= (int)sizeof(ENC_RTSP_HEADER)) {
+                uint32_t typeAndLen = BE32(((PENC_RTSP_HEADER)responseBuffer)->typeAndLength);
+
+                if ((typeAndLen & ENCRYPTED_RTSP_BIT) &&
+                    (uint64_t)offset >= (uint64_t)(typeAndLen & ~ENCRYPTED_RTSP_BIT) + sizeof(ENC_RTSP_HEADER)) {
+                    completeBeforeClose = true;
+                    break;
+                }
+            }
         }
     }
+
+    Limelog("RTSP %s took %u ms%s\n", request->message.request.command,
+            (unsigned int)(PltGetMillis() - startTime),
+            completeBeforeClose ? " (complete before server close)" : "");
 
     // Decrypt (if necessary) and deserialize the RTSP response
     ret = unsealRtspMessage(responseBuffer, offset, response);
