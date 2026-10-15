@@ -569,6 +569,15 @@ const char* LiGetStageName(int stage);
 // This function may only be called between LiStartConnection() and LiStopConnection().
 bool LiGetEstimatedRttInfo(uint32_t* estimatedRtt, uint32_t* estimatedRttVariance);
 
+// This function asks an Apollo-based host (Apollo, Vibepollo) to run one of its server
+// commands. cmdId is the zero-based position of the command in the <ServerCommand> list
+// returned by /serverinfo; the host only lists them, and only runs them, when the client
+// has the server command permission. The request uses the encrypted control stream, so
+// this function returns LI_ERR_UNSUPPORTED for hosts that don't use it (GFE, older
+// Sunshine versions). Other hosts may ignore the request.
+// This function may only be called between LiStartConnection() and LiStopConnection().
+int LiSendExecServerCmd(uint8_t cmdId);
+
 // This function queues a relative mouse move event to be sent to the remote server.
 int LiSendMouseMoveEvent(short deltaX, short deltaY);
 
